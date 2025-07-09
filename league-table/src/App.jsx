@@ -130,6 +130,37 @@ function calculateTable(players, results, gameMode) {
   return table.sort((a, b) => b.points - a.points || b.gf - b.ga - (a.gf - a.ga) || b.gf - a.gf);
 }
 
+function get1v1Schedule(players) {
+  const schedule = [];
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      schedule.push({ home: players[i], away: players[j] });
+    }
+  }
+  return schedule;
+}
+function get2v2Schedule(players) {
+  // All unique sets of 4 players, all unique 2v2 splits
+  const comb = (arr, k) => arr.length < k ? [] : k === 0 ? [[]] : arr.flatMap((v, i) => comb(arr.slice(i + 1), k - 1).map(t => [v, ...t]));
+  const teamComb = (arr) => {
+    if (arr.length !== 4) return [];
+    return [
+      [[arr[0], arr[1]], [arr[2], arr[3]]],
+      [[arr[0], arr[2]], [arr[1], arr[3]]],
+      [[arr[0], arr[3]], [arr[1], arr[2]]],
+    ];
+  };
+  const schedule = [];
+  const setsOf4 = comb(players, 4);
+  setsOf4.forEach(set => {
+    teamComb(set).forEach(([teamA, teamB]) => {
+      const sitting = players.filter(p => !set.includes(p));
+      schedule.push({ teamA, teamB, sitting });
+    });
+  });
+  return schedule;
+}
+
 function App() {
   // Load from localStorage if available
   const getInitialPlayers = () => {
@@ -164,6 +195,10 @@ function App() {
   const [editIndex, setEditIndex] = useState(null);
   const [error, setError] = useState('');
   const [statsPlayer, setStatsPlayer] = useState(null); // Player for stats modal
+  const [schedule, setSchedule] = useState([]);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [editingScheduleIdx, setEditingScheduleIdx] = useState(null);
+  const [editingFields, setEditingFields] = useState({});
 
   const table = calculateTable(playerNames, results, gameMode);
 
@@ -388,6 +423,25 @@ function App() {
       });
       return changed ? newForm : f;
     });
+  };
+
+  const handleGenerateSchedule = () => {
+    if (gameMode === '1v1') {
+      setSchedule(get1v1Schedule(playerNames));
+    } else {
+      setSchedule(get2v2Schedule(playerNames));
+    }
+    setShowSchedule(true);
+  };
+
+  // Helper to check if a scheduled game is completed
+  const isGameCompleted = (game) => {
+    if (gameMode === '1v1') {
+      return results.some(r => r.home === game.home && r.away === game.away);
+    } else {
+      const a = game.teamA.join(', '), b = game.teamB.join(', '), s = game.sitting.join(', ');
+      return results.some(r => r.teamA === a && r.teamB === b && (r.sittingPlayer || '') === s);
+    }
   };
 
   return (
@@ -764,6 +818,131 @@ function App() {
           );
         })}
       </ul>
+
+      <div style={{ margin: '16px 0', display: 'flex', gap: '8px' }}>
+        <button onClick={handleGenerateSchedule} style={{ background: '#007bff', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>
+          Generate Schedule
+        </button>
+        <button onClick={() => { setSchedule([]); setShowSchedule(false); }} style={{ background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}>
+          Clear Schedule
+        </button>
+      </div>
+      {showSchedule && (
+        <div className="schedule-section">
+          <h2>Schedule</h2>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {schedule.map((game, idx) => {
+              const completedIdx = results.findIndex(r =>
+                gameMode === '1v1'
+                  ? r.home === game.home && r.away === game.away
+                  : r.teamA === game.teamA.join(', ') && r.teamB === game.teamB.join(', ') && (r.sittingPlayer || '') === game.sitting.join(', ')
+              );
+              const isCompleted = completedIdx !== -1;
+              const isEditing = editingScheduleIdx === idx;
+              const result = isCompleted ? results[completedIdx] : null;
+              return (
+                <li key={idx} style={{ marginBottom: 12, background: isCompleted ? '#225d2a' : '#333', color: '#fff', borderRadius: 4, padding: 8 }}>
+                  {gameMode === '1v1' ? (
+                    <>
+                      <b>{game.home}</b> vs <b>{game.away}</b>
+                    </>
+                  ) : (
+                    <>
+                      <b>Team A:</b> {game.teamA.join(', ')} vs <b>Team B:</b> {game.teamB.join(', ')}
+                      {game.sitting.length > 0 && <span> [Sitting: {game.sitting.join(', ')}]</span>}
+                    </>
+                  )}
+                  {!isCompleted && !isEditing && (
+                    <div style={{ marginTop: 4 }}>
+                      {gameMode === '1v1' ? (
+                        <>
+                          <input type="number" min="0" placeholder="Home Goals" style={{ width: 60 }} id={`h${idx}`} />
+                          <input type="number" min="0" placeholder="Away Goals" style={{ width: 60, marginLeft: 4 }} id={`a${idx}`} />
+                          <input type="text" placeholder="Note (optional)" style={{ width: 120, marginLeft: 4 }} id={`n${idx}`} />
+                          <button style={{ marginLeft: 4 }} onClick={() => {
+                            const homeGoals = Number(document.getElementById(`h${idx}`).value);
+                            const awayGoals = Number(document.getElementById(`a${idx}`).value);
+                            const note = document.getElementById(`n${idx}`).value;
+                            if (isNaN(homeGoals) || isNaN(awayGoals)) return;
+                            setResults(r => [...r, { home: game.home, away: game.away, homeGoals, awayGoals, note }]);
+                          }}>Save</button>
+                        </>
+                      ) : (
+                        <>
+                          <input type="number" min="0" placeholder="Team A Goals" style={{ width: 60 }} id={`ta${idx}`} />
+                          <input type="number" min="0" placeholder="Team B Goals" style={{ width: 60, marginLeft: 4 }} id={`tb${idx}`} />
+                          <input type="text" placeholder="Note (optional)" style={{ width: 120, marginLeft: 4 }} id={`nt${idx}`} />
+                          <button style={{ marginLeft: 4 }} onClick={() => {
+                            const teamAGoals = Number(document.getElementById(`ta${idx}`).value);
+                            const teamBGoals = Number(document.getElementById(`tb${idx}`).value);
+                            const note = document.getElementById(`nt${idx}`).value;
+                            if (isNaN(teamAGoals) || isNaN(teamBGoals)) return;
+                            setResults(r => [...r, {
+                              teamA: game.teamA.join(', '),
+                              teamB: game.teamB.join(', '),
+                              teamAGoals,
+                              teamBGoals,
+                              sittingPlayer: game.sitting.join(', '),
+                              note
+                            }]);
+                          }}>Save</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {isCompleted && !isEditing && (
+                    <>
+                      <span style={{ color: '#28a745', marginLeft: 8 }}>✔ Completed</span>
+                      <button style={{ marginLeft: 8 }} onClick={() => {
+                        setEditingScheduleIdx(idx);
+                        setEditingFields(gameMode === '1v1'
+                          ? { homeGoals: result.homeGoals, awayGoals: result.awayGoals, note: result.note || '' }
+                          : { teamAGoals: result.teamAGoals, teamBGoals: result.teamBGoals, note: result.note || '' }
+                        );
+                      }}>✏️ Edit</button>
+                    </>
+                  )}
+                  {isEditing && (
+                    <div style={{ marginTop: 4 }}>
+                      {gameMode === '1v1' ? (
+                        <>
+                          <input type="number" min="0" placeholder="Home Goals" style={{ width: 60 }} value={editingFields.homeGoals} onChange={e => setEditingFields(f => ({ ...f, homeGoals: e.target.value }))} />
+                          <input type="number" min="0" placeholder="Away Goals" style={{ width: 60, marginLeft: 4 }} value={editingFields.awayGoals} onChange={e => setEditingFields(f => ({ ...f, awayGoals: e.target.value }))} />
+                          <input type="text" placeholder="Note (optional)" style={{ width: 120, marginLeft: 4 }} value={editingFields.note} onChange={e => setEditingFields(f => ({ ...f, note: e.target.value }))} />
+                          <button style={{ marginLeft: 4 }} onClick={() => {
+                            const homeGoals = Number(editingFields.homeGoals);
+                            const awayGoals = Number(editingFields.awayGoals);
+                            const note = editingFields.note;
+                            if (isNaN(homeGoals) || isNaN(awayGoals)) return;
+                            setResults(r => r.map((res, i) => i === completedIdx ? { ...res, homeGoals, awayGoals, note } : res));
+                            setEditingScheduleIdx(null);
+                          }}>Save</button>
+                          <button style={{ marginLeft: 4 }} onClick={() => setEditingScheduleIdx(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <input type="number" min="0" placeholder="Team A Goals" style={{ width: 60 }} value={editingFields.teamAGoals} onChange={e => setEditingFields(f => ({ ...f, teamAGoals: e.target.value }))} />
+                          <input type="number" min="0" placeholder="Team B Goals" style={{ width: 60, marginLeft: 4 }} value={editingFields.teamBGoals} onChange={e => setEditingFields(f => ({ ...f, teamBGoals: e.target.value }))} />
+                          <input type="text" placeholder="Note (optional)" style={{ width: 120, marginLeft: 4 }} value={editingFields.note} onChange={e => setEditingFields(f => ({ ...f, note: e.target.value }))} />
+                          <button style={{ marginLeft: 4 }} onClick={() => {
+                            const teamAGoals = Number(editingFields.teamAGoals);
+                            const teamBGoals = Number(editingFields.teamBGoals);
+                            const note = editingFields.note;
+                            if (isNaN(teamAGoals) || isNaN(teamBGoals)) return;
+                            setResults(r => r.map((res, i) => i === completedIdx ? { ...res, teamAGoals, teamBGoals, note } : res));
+                            setEditingScheduleIdx(null);
+                          }}>Save</button>
+                          <button style={{ marginLeft: 4 }} onClick={() => setEditingScheduleIdx(null)}>Cancel</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
