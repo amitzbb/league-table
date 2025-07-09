@@ -771,7 +771,7 @@ function App() {
       )}
 
       <h2>Results</h2>
-      <ul>
+      <ul className="results-list">
         {results.map((r, i) => {
           let resultContent;
           let teamAWin = false, teamBWin = false, draw = false;
@@ -805,6 +805,7 @@ function App() {
           }
           return (
             <li key={i} style={{ marginBottom: 4 }}>
+              <span style={{ fontWeight: 'bold', marginRight: 8 }}>{i + 1}.</span>
               {resultContent}
               {r.note && (
                 <div style={{ fontStyle: 'italic', color: '#888', marginTop: 2 }}>{r.note}</div>

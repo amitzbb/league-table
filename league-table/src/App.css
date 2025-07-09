@@ -131,3 +131,14 @@
     font-size: 1.2rem;
   }
 }
+
+.results-list {
+  text-align: left;
+  margin-left: 0;
+  padding-left: 0;
+  max-width: 700px;
+}
+.results-list li {
+  list-style: none;
+  margin-bottom: 8px;
+}
