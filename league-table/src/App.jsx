@@ -139,7 +139,7 @@ function get1v1Schedule(players) {
   }
   return schedule;
 }
-function get2v2Schedule(players) {
+function get2v2Schedule(players, rounds = 1) {
   // All unique sets of 4 players, all unique 2v2 splits
   const comb = (arr, k) => arr.length < k ? [] : k === 0 ? [[]] : arr.flatMap((v, i) => comb(arr.slice(i + 1), k - 1).map(t => [v, ...t]));
   const teamComb = (arr) => {
@@ -151,13 +151,21 @@ function get2v2Schedule(players) {
     ];
   };
   const schedule = [];
-  const setsOf4 = comb(players, 4);
-  setsOf4.forEach(set => {
-    teamComb(set).forEach(([teamA, teamB]) => {
-      const sitting = players.filter(p => !set.includes(p));
-      schedule.push({ teamA, teamB, sitting });
+  if (players.length === 4) {
+    for (let r = 0; r < rounds; r++) {
+      teamComb(players).forEach(([teamA, teamB]) => {
+        schedule.push({ teamA, teamB, sitting: [] });
+      });
+    }
+  } else {
+    const setsOf4 = comb(players, 4);
+    setsOf4.forEach(set => {
+      teamComb(set).forEach(([teamA, teamB]) => {
+        const sitting = players.filter(p => !set.includes(p));
+        schedule.push({ teamA, teamB, sitting });
+      });
     });
-  });
+  }
   return schedule;
 }
 
@@ -199,6 +207,7 @@ function App() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [editingScheduleIdx, setEditingScheduleIdx] = useState(null);
   const [editingFields, setEditingFields] = useState({});
+  const [numRounds, setNumRounds] = useState(1);
 
   const table = calculateTable(playerNames, results, gameMode);
 
@@ -429,7 +438,7 @@ function App() {
     if (gameMode === '1v1') {
       setSchedule(get1v1Schedule(playerNames));
     } else {
-      setSchedule(get2v2Schedule(playerNames));
+      setSchedule(get2v2Schedule(playerNames, playerNames.length === 4 ? numRounds : 1));
     }
     setShowSchedule(true);
   };
@@ -941,6 +950,16 @@ function App() {
               );
             })}
           </ul>
+        </div>
+      )}
+      {gameMode === '2v2' && playerNames.length === 4 && (
+        <div style={{ margin: '16px 0' }}>
+          <label style={{ fontWeight: 'bold', marginRight: 8 }}>Number of Rounds:</label>
+          <select value={numRounds} onChange={e => setNumRounds(Number(e.target.value))} style={{ fontSize: '1.1rem', padding: '4px 8px' }}>
+            {[1,2,3,4,5,6,7,8,9,10].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
         </div>
       )}
     </div>
