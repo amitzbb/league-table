@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 
 const defaultPlayers = [
@@ -131,9 +131,23 @@ function calculateTable(players, results, gameMode) {
 }
 
 function App() {
-  const [playerNames, setPlayerNames] = useState([...defaultPlayers]);
-  const [results, setResults] = useState([]);
-  const [gameMode, setGameMode] = useState('1v1'); // '1v1' or '2v2'
+  // Load from localStorage if available
+  const getInitialPlayers = () => {
+    const stored = localStorage.getItem('leagueTablePlayers');
+    return stored ? JSON.parse(stored) : [...defaultPlayers];
+  };
+  const getInitialResults = () => {
+    const stored = localStorage.getItem('leagueTableResults');
+    return stored ? JSON.parse(stored) : [];
+  };
+  const getInitialMode = () => {
+    const stored = localStorage.getItem('leagueTableMode');
+    return stored ? stored : '2v2';
+  };
+
+  const [playerNames, setPlayerNames] = useState(getInitialPlayers());
+  const [results, setResults] = useState(getInitialResults());
+  const [gameMode, setGameMode] = useState(getInitialMode());
   const [form, setForm] = useState({ 
     home: defaultPlayers[0], 
     away: defaultPlayers[1], 
@@ -144,12 +158,69 @@ function App() {
     teamB1: '',
     teamB2: '',
     teamAGoals: '',
-    teamBGoals: ''
+    teamBGoals: '',
+    note: ''
   });
   const [editIndex, setEditIndex] = useState(null);
   const [error, setError] = useState('');
+  const [statsPlayer, setStatsPlayer] = useState(null); // Player for stats modal
 
   const table = calculateTable(playerNames, results, gameMode);
+
+  // Save to localStorage on change
+  useEffect(() => {
+    localStorage.setItem('leagueTablePlayers', JSON.stringify(playerNames));
+  }, [playerNames]);
+  useEffect(() => {
+    localStorage.setItem('leagueTableResults', JSON.stringify(results));
+  }, [results]);
+  useEffect(() => {
+    localStorage.setItem('leagueTableMode', gameMode);
+  }, [gameMode]);
+
+  // Helper to get all matches for a player
+  const getPlayerMatches = (player) => {
+    return results.filter(r => {
+      if (gameMode === '1v1') {
+        return r.home === player || r.away === player;
+      } else {
+        const teamA = r.teamA.split(',').map(p => p.trim());
+        const teamB = r.teamB.split(',').map(p => p.trim());
+        return teamA.includes(player) || teamB.includes(player) || r.sittingPlayer === player;
+      }
+    });
+  };
+
+  // Helper to get stats for a player
+  const getPlayerStats = (player) => {
+    let played = 0, won = 0, drawn = 0, lost = 0, gf = 0, ga = 0, points = 0;
+    getPlayerMatches(player).forEach(r => {
+      if (gameMode === '1v1') {
+        let isHome = r.home === player;
+        let goalsFor = isHome ? r.homeGoals : r.awayGoals;
+        let goalsAgainst = isHome ? r.awayGoals : r.homeGoals;
+        played++;
+        gf += goalsFor;
+        ga += goalsAgainst;
+        if (r.homeGoals === r.awayGoals) { drawn++; points++; }
+        else if ((isHome && r.homeGoals > r.awayGoals) || (!isHome && r.awayGoals > r.homeGoals)) { won++; points += 3; }
+        else { lost++; }
+      } else {
+        if (r.sittingPlayer === player) return;
+        const teamA = r.teamA.split(',').map(p => p.trim());
+        const isTeamA = teamA.includes(player);
+        const goalsFor = isTeamA ? r.teamAGoals : r.teamBGoals;
+        const goalsAgainst = isTeamA ? r.teamBGoals : r.teamAGoals;
+        played++;
+        gf += goalsFor;
+        ga += goalsAgainst;
+        if (r.teamAGoals === r.teamBGoals) { drawn++; points++; }
+        else if ((isTeamA && r.teamAGoals > r.teamBGoals) || (!isTeamA && r.teamBGoals > r.teamAGoals)) { won++; points += 3; }
+        else { lost++; }
+      }
+    });
+    return { played, won, drawn, lost, gf, ga, gd: gf - ga, points };
+  };
 
   const handleNameChange = (idx, value) => {
     setPlayerNames((prev) => {
@@ -168,7 +239,8 @@ function App() {
       teamB1: '',
       teamB2: '',
       teamAGoals: '',
-      teamBGoals: ''
+      teamBGoals: '',
+      note: ''
     });
     setEditIndex(null);
     setError('');
@@ -217,8 +289,8 @@ function App() {
         r.map((item, idx) =>
           idx === editIndex
             ? (gameMode === '1v1' 
-                ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals) }
-                : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)) }
+                ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals), note: form.note }
+                : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)), note: form.note }
               )
             : item
         )
@@ -228,12 +300,12 @@ function App() {
       setResults((r) => [
         ...r,
         gameMode === '1v1' 
-          ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals) }
-          : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)) }
+          ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals), note: form.note }
+          : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)), note: form.note }
       ]);
     }
     
-    setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '' });
+    setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '', note: '' });
     setError('');
   };
 
@@ -241,7 +313,7 @@ function App() {
     setResults((r) => r.filter((_, i) => i !== idx));
     if (editIndex === idx) {
       setEditIndex(null);
-      setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '' });
+      setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '', note: '' });
     }
     setError('');
   };
@@ -259,7 +331,8 @@ function App() {
         teamB1: '',
         teamB2: '',
         teamAGoals: '',
-        teamBGoals: ''
+        teamBGoals: '',
+        note: r.note
       });
     } else {
       const teamA = r.teamA.split(',').map(p => p.trim());
@@ -274,7 +347,8 @@ function App() {
         teamB1: teamB[0] || '',
         teamB2: teamB[1] || '',
         teamAGoals: r.teamAGoals,
-        teamBGoals: r.teamBGoals
+        teamBGoals: r.teamBGoals,
+        note: r.note
       });
     }
     setEditIndex(idx);
@@ -370,6 +444,13 @@ function App() {
             placeholder="Away Goals"
             required
           />
+          <textarea
+            name="note"
+            value={form.note}
+            onChange={handleChange}
+            placeholder="Add a note (optional)"
+            style={{ width: '100%', minHeight: 40, margin: '8px 0' }}
+          />
           <button type="submit">{editIndex !== null ? 'Save Edit' : 'Add Result'}</button>
           {editIndex !== null && (
             <button
@@ -377,7 +458,7 @@ function App() {
               style={{ marginLeft: 8, background: '#aaa', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}
               onClick={() => {
                 setEditIndex(null);
-                setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '' });
+                setForm({ home: playerNames[0], away: playerNames[1], homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '', note: '' });
                 setError('');
               }}
             >
@@ -439,6 +520,13 @@ function App() {
               <label style={{ minWidth: '200px', textAlign: 'left', fontWeight: 'bold' }}>Sitting Player:</label>
               <span style={{ width: '200px', fontWeight: 'bold' }}>{playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)) || '-'}</span>
             </div>
+            <textarea
+              name="note"
+              value={form.note}
+              onChange={handleChange}
+              placeholder="Add a note (optional)"
+              style={{ width: '100%', minHeight: 40, margin: '8px 0' }}
+            />
           </div>
           <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
             <button type="submit">{editIndex !== null ? 'Save Edit' : 'Add Result'}</button>
@@ -448,7 +536,7 @@ function App() {
                 style={{ marginLeft: 8, background: '#aaa', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}
                 onClick={() => {
                   setEditIndex(null);
-                  setForm({ home: '', away: '', homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '' });
+                  setForm({ home: '', away: '', homeGoals: '', awayGoals: '', teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '', note: '' });
                   setError('');
                 }}
               >
@@ -459,7 +547,7 @@ function App() {
               type="button"
               style={{ background: '#888', color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px', cursor: 'pointer' }}
               onClick={() => {
-                setForm(f => ({ ...f, teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '' }));
+                setForm(f => ({ ...f, teamA1: '', teamA2: '', teamB1: '', teamB2: '', teamAGoals: '', teamBGoals: '', note: '' }));
                 setError('');
               }}
             >
@@ -509,7 +597,9 @@ function App() {
               if (rowKey === lastStats) rowClass = 'last-place';
               return (
                 <tr key={row.name} className={rowClass}>
-                  <td>{row.name}</td>
+                  <td>
+                    <button className="player-link" style={{ background: 'none', border: 'none', color: '#007bff', cursor: 'pointer', textDecoration: 'underline', padding: 0 }} onClick={() => setStatsPlayer(row.name)}>{row.name}</button>
+                  </td>
                   <td>{row.played}</td>
                   <td>{row.won}</td>
                   <td>{row.drawn}</td>
@@ -524,6 +614,42 @@ function App() {
           })()}
         </tbody>
       </table>
+
+      {/* Player Stats Modal */}
+      {statsPlayer && (
+        <div className="modal-overlay" onClick={() => setStatsPlayer(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>{statsPlayer} - Statistics</h2>
+            {(() => {
+              const stats = getPlayerStats(statsPlayer);
+              return (
+                <ul style={{ listStyle: 'none', padding: 0 }}>
+                  <li>Played: <b>{stats.played}</b></li>
+                  <li>Won: <b>{stats.won}</b></li>
+                  <li>Drawn: <b>{stats.drawn}</b></li>
+                  <li>Lost: <b>{stats.lost}</b></li>
+                  <li>Goals For: <b>{stats.gf}</b></li>
+                  <li>Goals Against: <b>{stats.ga}</b></li>
+                  <li>Goal Difference: <b>{stats.gd}</b></li>
+                  <li>Points: <b>{stats.points}</b></li>
+                </ul>
+              );
+            })()}
+            <h3>Match History</h3>
+            <ul style={{ maxHeight: 200, overflowY: 'auto', padding: 0 }}>
+              {getPlayerMatches(statsPlayer).map((r, i) => (
+                <li key={i} style={{ marginBottom: 8, borderBottom: '1px solid #eee', paddingBottom: 4 }}>
+                  {gameMode === '1v1'
+                    ? `${r.home} ${r.homeGoals} - ${r.awayGoals} ${r.away}`
+                    : `Team A (${r.teamA}) ${r.teamAGoals} - ${r.teamBGoals} Team B (${r.teamB}) [Sitting: ${r.sittingPlayer}]`}
+                  {r.note && <div style={{ fontStyle: 'italic', color: '#888' }}>{r.note}</div>}
+                </li>
+              ))}
+            </ul>
+            <button style={{ marginTop: 16 }} onClick={() => setStatsPlayer(null)}>Close</button>
+          </div>
+        </div>
+      )}
 
       <h2>Results</h2>
       <ul>
@@ -561,6 +687,9 @@ function App() {
           return (
             <li key={i} style={{ marginBottom: 4 }}>
               {resultContent}
+              {r.note && (
+                <div style={{ fontStyle: 'italic', color: '#888', marginTop: 2 }}>{r.note}</div>
+              )}
               <button
                 style={{ marginLeft: 8, background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', padding: '2px 8px' }}
                 onClick={() => handleDelete(i)}
