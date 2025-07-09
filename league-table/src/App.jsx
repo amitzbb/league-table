@@ -269,13 +269,17 @@ function App() {
       const teamAPlayers = [form.teamA1, form.teamA2].filter(Boolean);
       const teamBPlayers = [form.teamB1, form.teamB2].filter(Boolean);
       const allSelected = [...teamAPlayers, ...teamBPlayers];
-      const sittingPlayer = playerNames.find(p => !allSelected.includes(p));
-      if (teamAPlayers.length !== 2 || teamBPlayers.length !== 2 || !sittingPlayer) {
-        setError('All 5 players must be assigned (2 per team + 1 sitting)!');
+      const sittingPlayers = playerNames.filter(p => !allSelected.includes(p));
+      if (teamAPlayers.length !== 2 || teamBPlayers.length !== 2) {
+        setError('Each team must have exactly 2 players!');
         return;
       }
       if (new Set(allSelected).size !== 4) {
         setError('Each player can only be selected once!');
+        return;
+      }
+      if (playerNames.length > 4 && sittingPlayers.length < 1) {
+        setError('There must be at least one sitting player!');
         return;
       }
       if (form.teamAGoals === '' || form.teamBGoals === '' || isNaN(form.teamAGoals) || isNaN(form.teamBGoals)) {
@@ -290,7 +294,7 @@ function App() {
           idx === editIndex
             ? (gameMode === '1v1' 
                 ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals), note: form.note }
-                : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)), note: form.note }
+                : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.length > 4 ? playerNames.filter(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)).join(', ') : '', note: form.note }
               )
             : item
         )
@@ -301,7 +305,7 @@ function App() {
         ...r,
         gameMode === '1v1' 
           ? { home: form.home, away: form.away, homeGoals: Number(form.homeGoals), awayGoals: Number(form.awayGoals), note: form.note }
-          : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)), note: form.note }
+          : { teamA: [form.teamA1, form.teamA2].join(', '), teamB: [form.teamB1, form.teamB2].join(', '), teamAGoals: Number(form.teamAGoals), teamBGoals: Number(form.teamBGoals), sittingPlayer: playerNames.length > 4 ? playerNames.filter(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)).join(', ') : '', note: form.note }
       ]);
     }
     
@@ -355,6 +359,37 @@ function App() {
     setError('');
   };
 
+  // Add/remove player handlers
+  const handleAddPlayer = () => {
+    setPlayerNames((prev) => [...prev, `Player ${prev.length + 1}`]);
+  };
+  const handleRemovePlayer = (idx) => {
+    const nameToRemove = playerNames[idx];
+    setPlayerNames((prev) => prev.filter((_, i) => i !== idx));
+    setResults((prev) => prev.filter(r => {
+      if (gameMode === '1v1') {
+        return r.home !== nameToRemove && r.away !== nameToRemove;
+      } else {
+        const teamA = r.teamA.split(',').map(p => p.trim());
+        const teamB = r.teamB.split(',').map(p => p.trim());
+        return !teamA.includes(nameToRemove) && !teamB.includes(nameToRemove) && r.sittingPlayer !== nameToRemove;
+      }
+    }));
+    // Reset form if it referenced the removed player
+    setForm(f => {
+      const fields = ['home', 'away', 'teamA1', 'teamA2', 'teamB1', 'teamB2', 'sittingPlayer'];
+      let changed = false;
+      const newForm = { ...f };
+      fields.forEach(field => {
+        if (f[field] === nameToRemove) {
+          newForm[field] = '';
+          changed = true;
+        }
+      });
+      return changed ? newForm : f;
+    });
+  };
+
   return (
     <div className="container">
       <h1>League Table</h1>
@@ -392,18 +427,35 @@ function App() {
 
       <div className="player-names-edit">
         <h2>Edit Player Names</h2>
-        <form onSubmit={e => e.preventDefault()}>
+        <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {playerNames.map((name, idx) => (
-            <input
-              key={idx}
-              type="text"
-              value={name}
-              onChange={e => handleNameChange(idx, e.target.value)}
-              placeholder={`Player ${idx + 1}`}
-              maxLength={20}
-              style={{ marginRight: 8, marginBottom: 8 }}
-            />
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input
+                type="text"
+                value={name}
+                onChange={e => handleNameChange(idx, e.target.value)}
+                placeholder={`Player ${idx + 1}`}
+                maxLength={20}
+                style={{ marginRight: 4, marginBottom: 8 }}
+              />
+              <button
+                type="button"
+                onClick={() => handleRemovePlayer(idx)}
+                disabled={playerNames.length <= 2}
+                style={{ background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, cursor: playerNames.length > 2 ? 'pointer' : 'not-allowed', padding: '2px 8px', marginBottom: 8 }}
+                title="Remove Player"
+              >
+                🗑️
+              </button>
+            </div>
           ))}
+          <button
+            type="button"
+            onClick={handleAddPlayer}
+            style={{ background: '#007bff', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', padding: '2px 12px', height: 32, marginBottom: 8 }}
+          >
+            + Add Player
+          </button>
         </form>
       </div>
 
@@ -516,10 +568,14 @@ function App() {
               <label style={{ minWidth: '200px', textAlign: 'left' }}>Team B Goals:</label>
               <input type="number" name="teamBGoals" min="0" value={form.teamBGoals} onChange={handleChange} placeholder="Team B Goals" required style={{ width: '100px' }} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <label style={{ minWidth: '200px', textAlign: 'left', fontWeight: 'bold' }}>Sitting Player:</label>
-              <span style={{ width: '200px', fontWeight: 'bold' }}>{playerNames.find(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)) || '-'}</span>
-            </div>
+            {playerNames.length > 4 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label style={{ minWidth: '200px', textAlign: 'left', fontWeight: 'bold' }}>Sitting Player{playerNames.length > 5 ? 's' : ''}:</label>
+                <span style={{ width: '200px', fontWeight: 'bold' }}>
+                  {playerNames.filter(p => ![form.teamA1, form.teamA2, form.teamB1, form.teamB2].includes(p)).join(', ') || '-'}
+                </span>
+              </div>
+            )}
             <textarea
               name="note"
               value={form.note}
